@@ -1,90 +1,119 @@
 package test.functions;
 
 import com.google.gson.JsonObject;
+
+import io.minio.GetObjectArgs;
+import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
+
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Count {
 
     private static final int BUFFER_SIZE = 1024 * 1024; // 1MB
-    private static final Path FILE_PATH = Paths.get("random_words.txt");
     private static final Map<String, byte[]> KV_STORE = new ConcurrentHashMap<>();
+    MinioClient minioClient = 
+        MinioClient.builder()
+            .endpoint("http://192.168.31.96:9009")
+            .credentials("minioadmin", "minioadmin123")
+            .build();
 
-    public void splitFile() throws IOException {
-        try (FileChannel fileChannel = FileChannel.open(FILE_PATH)) {
-            ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
-            int sliceId = 0;
+    public void splitFile(InputStream inputStream, AtomicInteger sliceIdCounter) throws IOException {
+        byte[] buffer = new byte[BUFFER_SIZE];
+        int sliceId = sliceIdCounter.get();
+        KV_STORE.clear();
+        
+        int bytesRead;
+        int offset = 0;
 
-            while (fileChannel.read(buffer) != -1) {
-                // Flip the buffer for reading
-                buffer.flip();
-                byte[] slice = new byte[buffer.limit()];
-                buffer.get(slice);
+        while ((bytesRead = inputStream.read(buffer, offset, BUFFER_SIZE - offset)) != -1) {
+            int totalBytes = offset + bytesRead;
 
-                // Find the last newline character
-                int lastNewLineIndex = findLastNewLine(slice);
-                if (lastNewLineIndex != -1) {
-                    // Store the slice in KV_STORE
-                    String key = "wordcount_slice_" + sliceId++;
-                    KV_STORE.put(key, Arrays.copyOf(slice, lastNewLineIndex + 1));
-                } else {
-                    // If no newline character found, compact the buffer
-                    buffer.compact();
-                    continue;
-                }
+            // If buffer is full or reached end of file, store the slice
+            if (totalBytes == BUFFER_SIZE || bytesRead == -1) {
+                byte[] slice = new byte[totalBytes];
+                System.arraycopy(buffer, 0, slice, 0, totalBytes);
+                String key = "wordcount_slice_" + sliceId++;
+                KV_STORE.put(key, slice);
+                System.out.println("Stored slice: " + key);
 
-                // Move remaining data to the beginning of the buffer
-                if (lastNewLineIndex < slice.length - 1) {
-                    int remainingSize = slice.length - lastNewLineIndex - 1;
-                    System.arraycopy(slice, lastNewLineIndex + 1, buffer.array(), 0, remainingSize);
-                    buffer.position(remainingSize);
-                    buffer.limit(BUFFER_SIZE);
-                }
-            }
-            buffer.clear();
-        }
-    }
-
-    private int findLastNewLine(byte[] slice) {
-        for (int i = slice.length - 1; i >= 0; i--) {
-            if (slice[i] == '\n') {
-                return i;
+                // Reset the offset for the next read
+                offset = 0;
+            } else {
+                // Adjust offset for the next read
+                offset = totalBytes;
             }
         }
-        return -1;
-    }
 
-    public void handleOneSlice(String key) {
-        byte[] value = KV_STORE.get(key);
-        if (value != null) {
-            System.out.println("handleOneSlice k " + key + " v " + new String(value));
-        } else {
-            System.err.println("No slice found for key: " + key);
+        // Store any remaining data
+        if (offset > 0) {
+            byte[] lastSlice = new byte[offset];
+            System.arraycopy(buffer, 0, lastSlice, 0, offset);
+            String key = "wordcount_slice_" + sliceId++;
+            KV_STORE.put(key, lastSlice);
+            System.out.println("Stored last slice: " + key);
         }
+
+        sliceIdCounter.set(sliceId); // Update the sliceId counter
     }
 
     public JsonObject call(JsonObject args) {
         JsonObject result = new JsonObject();
+        AtomicInteger sliceIdCounter = new AtomicInteger(0);
         try {
-            // Split the file
-            splitFile();
+            System.out.println("Received arguments: " + args.toString());
+            String textS3Path = args.get("text_s3_path").getAsString();
+            System.out.println("Downloading file from MinIO: " + textS3Path);
 
-            // Iterate through KV_STORE and add slices to result
+            // Download the file from MinIO
+            GetObjectArgs getObjectArgs = GetObjectArgs.builder()
+                    .bucket("serverless-bench")
+                    .object(textS3Path)
+                    .build();
+            InputStream inputStream = minioClient.getObject(getObjectArgs);
+            System.out.println("File downloaded successfully from MinIO");
+
+            // Split the file
+            splitFile(inputStream, sliceIdCounter);
+            System.out.println("File split into " + KV_STORE.size() + " slices");
+
+            // Upload each slice to MinIO with a unique ID
             for (Map.Entry<String, byte[]> entry : KV_STORE.entrySet()) {
                 String key = entry.getKey();
-                String value = new String(entry.getValue());
-                result.addProperty(key, value);
+                byte[] value = entry.getValue();
+                ByteArrayInputStream sliceInputStream = new ByteArrayInputStream(value);
+                System.out.println("Uploading slice: " + key);
+
+                // Upload slice to MinIO
+                minioClient.putObject(
+                        PutObjectArgs.builder()
+                                .bucket("serverless-bench")
+                                .object(key)
+                                .stream(sliceInputStream, value.length, -1)
+                                .contentType("text/plain")
+                                .build()
+                );
+
+                // Add each slice key to result
+                result.addProperty("slice_" + key, key);
+                System.out.println("Slice uploaded successfully: " + key);
             }
-        } catch (IOException e) {
+
+            System.out.println("All slices uploaded successfully");
+
+            return result;
+        } catch (Exception e) {
             e.printStackTrace();
             result.addProperty("error", "An error occurred while processing the file: " + e.getMessage());
+            return result;
         }
-        return result;
     }
 }

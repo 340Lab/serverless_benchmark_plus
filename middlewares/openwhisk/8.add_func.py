@@ -1,3 +1,4 @@
+import glob
 import os, yaml
 CUR_FPATH = os.path.abspath(__file__)
 CUR_FDIR = os.path.dirname(CUR_FPATH)
@@ -35,8 +36,10 @@ os_system_sure(f"python3 scripts/1.gen_ow_app.py {demo_app}")
 
 ow_app_dir=f"scripts/ow/{demo_app}"
 # list funcs in ow_app_dir
-for fn in os.listdir(ow_app_dir):
-    os_system_sure(f"wsk -i action create {demo_app}_{fn} {ow_app_dir}/{fn}/target/hello-1.0-SNAPSHOT-jar-with-dependencies.jar --main test.Application")
+file_pattern = os.path.join(ow_app_dir, '*with-dependencies*')
+for file_path in glob.glob(file_pattern):
+    fn = os.path.basename(file_path)  # 获取文件名
+    os_system_sure(f"wsk -i action create {demo_app}_{fn} {file_path}/target/hello-1.0-SNAPSHOT-jar-with-dependencies.jar --main test.Application")
 
 # list funcs
 os_system_sure("wsk list")

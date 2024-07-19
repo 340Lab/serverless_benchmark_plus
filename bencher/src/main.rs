@@ -60,7 +60,7 @@ lazy_static::lazy_static! {
             let bucket_name="serverless-bench";
             let region=Region::Custom {
                 region: "eu-central-1".to_owned(),
-                endpoint: "http://localhost:9009".to_owned(),
+                endpoint: "http://192.168.31.96:9009".to_owned(),
             };
             let credentials= Credentials {
                 access_key: Some("minioadmin".to_owned()),

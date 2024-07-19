@@ -7,10 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fmt::{format, Debug};
 use std::fs::{self, File};
-use std::io::BufReader;
+use std::path::Path;
 use std::process::{self, Command as Process};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::io::Write;
 
 use super::PlatformOpsBind;
 use crate::{Metric, PlatformOps, SpecTarget, BUCKET};
@@ -53,12 +52,17 @@ impl SpecTarget for WordCount {
     }
 
     async fn call_once(&mut self, cli: Cli) -> Metric {
-        // 读取文件
-        let text = fs::read("word_count/random_words.txt").unwrap();
+        
+        let file_path = "word_count/random_words.txt";
+
+        // 读取文件内容
+        let text = fs::read(file_path).expect("Failed to read file");
 
         // 上传文件到存储桶
-        BUCKET.put_object("random_words.txt", &text).await.unwrap();
-           
+        BUCKET.put_object("random_words.txt", &text)
+            .await
+            .expect("Failed to upload file to bucket");
+            
         let arg = Args {
             text_s3_path: "random_words.txt".to_string(),
         };
@@ -72,7 +76,6 @@ impl SpecTarget for WordCount {
             .call_fn("word_count", "count", &serde_json::to_value(arg).unwrap())
             .await;
 
-        print!("output {}",output);
         let res: serde_json::Value = serde_json::from_str(&output).unwrap();
         let req_arrive_time = res.get("req_arrive_time").unwrap().as_u64().unwrap();
         let bf_exec_time = res.get("bf_exec_time").unwrap().as_u64().unwrap();
@@ -102,6 +105,36 @@ impl SpecTarget for WordCount {
             );
         } else {
             println!("- receive resp time: {}", receive_resp_time - fn_end_ms);
+        }
+
+        let slice_keys: Vec<String> = res
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter_map(|(key, _value)| {
+            if key.starts_with("slice_wordcount_slice") {
+                Some(key.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+        // Fetch objects from the bucket for each slice key
+        for key in slice_keys {
+            let slice_path = res.get(&key).unwrap().as_str().unwrap();
+
+            let slice_content:  Vec<u8> = BUCKET.get_object(slice_path)
+                .await
+                .expect("Failed to get slice from bucket")
+                .to_vec();
+
+            let file_name = Path::new(slice_path).file_name().unwrap().to_str().unwrap();
+            let local_file_path = format!("word_count/{}", file_name);
+        
+            // Write slice content to local file
+            std::fs::write(&local_file_path, &slice_content).expect("Failed to write slice to file");
+           
         }
 
         Metric {
@@ -177,7 +210,7 @@ struct Args {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Resp {
-    word_count: String,
+    result_txt: String,
 }
 
 // 将字符串转换为u64哈希值
@@ -192,9 +225,15 @@ fn generate_random_text<R: Rng>(rng: &mut R, length: usize) -> Vec<u8> {
     let mut text = Vec::with_capacity(length);
     let chars: &[u8] = b"abcdefghijklmnopqrstuvwxyz ";
 
-    for _ in 0..length {
-        text.push(*chars.choose(rng).unwrap());
+    for i in 0..length {
+        if i > 0 && i % 80 == 0 {
+            // 每80个字符插入一个换行符
+            text.push(b'\n');
+        } else {
+            text.push(*chars.choose(rng).unwrap());
+        }
     }
 
     text
 }
+
