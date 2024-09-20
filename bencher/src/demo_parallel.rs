@@ -42,7 +42,7 @@ impl SpecTarget for Parallel {
     async fn call_once(&mut self, cli: Cli) -> Metric {
         let arg = Args {
             loopTime: 10000000,
-            parallelIndex: 100,
+            parallelIndex: 16,
         };
         let start_call_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -56,7 +56,7 @@ impl SpecTarget for Parallel {
                 &serde_json::to_value(arg).unwrap(),
             )
             .await;
-        println!("output: {:?}", output);
+        println!("debug output: {:?}", output);
         let res: serde_json::Value = serde_json::from_str(&output).unwrap();
         let req_arrive_time = res.get("req_arrive_time").unwrap().as_u64().unwrap();
         let bf_exec_time = res.get("bf_exec_time").unwrap().as_u64().unwrap();
@@ -68,7 +68,6 @@ impl SpecTarget for Parallel {
             .expect("Time went backwards")
             .as_millis() as u64;
 
-        println!("debug output: {:?}", output);
         println!(
             "\ntotal request latency: {}",
             receive_resp_time - start_call_ms
