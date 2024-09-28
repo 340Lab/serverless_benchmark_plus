@@ -103,6 +103,21 @@ def snake_to_big_camel(snake_str):
     components = snake_str.split('_')
     # 将每个单词的首字母大写并连接成一个字符串
     return ''.join(x.title() for x in components)
+
+def check_and_compile_sofa_demo(prj_path):
+    pom_path = os.path.join(prj_path, "pom.xml")
+    
+    # 检查 pom.xml 中是否包含 <serverless-depend>../sofa_demo</serverless-depend>
+    if os.path.exists(pom_path):
+        with open(pom_path, 'r') as pom_file:
+            pom_content = pom_file.read()
+            if "<serverless-depend>../sofa_demo</serverless-depend>" in pom_content:
+                print("\nDetected serverless-depend on sofa_demo, compiling sofa_demo...")
+                os_system_sure("cd ../sofa_demo && mvn clean package")
+            else:
+                print("\nNo serverless-depend on sofa_demo found.")
+    else:
+        print("\nNo pom.xml found.")
 #################################################################################################
 
 
@@ -127,6 +142,9 @@ os_system_sure(f"mkdir -p ow/{prj}/tmp")
 
 ## copy prj
 os_system_sure(f"cp -r ../{prj}/* ./ow/{prj}/tmp/")
+
+# Check for sofa_demo dependency and compile if found
+check_and_compile_sofa_demo(f"./ow/{prj}/tmp")
 
 ## construct app config file for waverless
 #  find functions dir in prj
