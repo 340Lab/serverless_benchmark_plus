@@ -204,11 +204,12 @@ with open(f"{functions_parent_dir}/Application.java","w") as f:
 emmbed_fns=""
 for fn in app_yml["fns"]:
     emmbed_fns+=f"""
-    private {snake_to_big_camel(fn)} {fn}= new {snake_to_big_camel(fn)}();
+    private {snake_to_big_camel(fn)} {fn}= new {snake_to_big_camel(fn)}(applicationContext);
     public JsonObject {fn}(JsonObject arg){{
         long fnStartTime = System.currentTimeMillis();
 
-        JsonObject res= {fn}.call(arg);
+        // 调用时传入 Spring 上下文
+        JsonObject res = {fn}.call(arg, applicationContext);
         
         long fnEndTime=System.currentTimeMillis();
         res.addProperty("recover_begin_time",io.serverless_lib.CracManager.recoverBeginTime);
@@ -223,6 +224,7 @@ service_dispatcher_java= f"""
 package {package_name};
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import com.google.gson.JsonObject;
@@ -237,6 +239,9 @@ public class ServiceDispatcher {{
 
     @Autowired
     RpcHandleOwner rpcHandleOwner;
+    
+    @Autowired
+    ApplicationContext applicationContext;  // 注入 Spring 上下文
 
     @PostConstruct
     public void init() {{

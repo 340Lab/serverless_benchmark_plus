@@ -89,3 +89,30 @@ def cmd_get_remote_file(ip,user,file):
 
 def cmd_send_remote_file(ip,user,file,remotedir):
     return Cmd(['scp',file,f"{user}@{ip}:{remotedir}"])
+
+
+class ClusterConfigNode:
+    def __init__(self,node_name,node_ip,is_master) -> None:
+        self.node_name=node_name
+        self.node_ip=node_ip
+        self.is_master=is_master
+class ClusterConfig:
+    nodes=[]
+    
+    def print(self):
+        for n in self.nodes:
+            print(f"Node: {n.node_name}, IP: {n.node_ip}, is_master: {n.is_master}")
+
+def load_cluster_config(cluster_conf_path)->ClusterConfig:
+    conf=ClusterConfig()
+    with open(cluster_conf_path) as f:
+        conf_raw=yaml.safe_load(f)
+        for node_name in conf_raw:
+            is_master=False
+            if "is_master" in conf_raw[node_name]:
+                is_master=True
+            conf.nodes.append(ClusterConfigNode(
+                node_name,
+                conf_raw[node_name]["ip"],
+                is_master))
+    return conf

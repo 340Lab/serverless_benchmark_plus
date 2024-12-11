@@ -20,6 +20,9 @@ pub struct Cli {
     pub sequential: u8,
 
     #[arg(long, action = clap::ArgAction::Count)]
+    pub javakv_test: u8,
+
+    #[arg(long, action = clap::ArgAction::Count)]
     pub with_ow: u8,
 
     #[arg(long, action = clap::ArgAction::Count)]

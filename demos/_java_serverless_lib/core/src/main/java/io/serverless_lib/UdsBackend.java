@@ -11,6 +11,7 @@ import javax.annotation.PostConstruct;
 import process_rpc_proto.ProcessRpcProto.AppStarted;
 import process_rpc_proto.ProcessRpcProto.FuncCallReq;
 import process_rpc_proto.ProcessRpcProto.FuncCallResp;
+import process_rpc_proto.ProcessRpcProto.KvResponses;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -41,15 +42,28 @@ import org.springframework.boot.DefaultApplicationArguments;
 import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 import java.lang.ProcessHandle;
+import io.serverless_lib.KvBatch;
 
+
+// interface RequestTypes {
+    
+// }
 public class UdsBackend
 // DisposableBean
 {
 
+    public class RequestTypes {
+        static final int JAVA_REQ_TYPE = 1;
+        static final int OTHER_REQ_TYPE = 2;
+    }
+    
     Thread netty_thread = null;
 
     @Autowired
     RpcHandleOwner rpcHandleOwner;
+
+    @Autowired
+    KvBatch kvBatch;
 
     Channel channel = null;
 
@@ -157,10 +171,16 @@ class ByteBufInputStream extends InputStream {
 class RpcPack {
     public int taskId;
     public ByteBuf packData;
+    public int reqType;
 
-    public RpcPack(int taskId, ByteBuf packData) {
+    public RpcPack(int taskId, ByteBuf packData, int reqType) {
         this.taskId = taskId;
         this.packData = packData;
+        if (reqType != UdsBackend.RequestTypes.JAVA_REQ_TYPE && reqType != UdsBackend.RequestTypes.OTHER_REQ_TYPE) {
+            System.out.println("Invalid reqType: " + reqType + "go to src/worker/func/shared/process_rpc.rs handle_remote_call modify");
+            return;
+        }
+        this.reqType = reqType;
     }
 }
 
@@ -198,6 +218,7 @@ class UnixChannelHandle {
                         public void initChannel(UnixChannel ch) throws Exception {
                             ch.pipeline()
                                     .addLast(new ByteToMessageDecoder() {
+                                        // 解码器，首先将收到的请求解码
                                         @Override
                                         protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
                                                 throws Exception {
@@ -212,6 +233,12 @@ class UnixChannelHandle {
                                             // 读取长度字段
                                             int length = in.readInt();
                                             int taskId = in.readInt();
+                                            int reqType = in.readInt();
+
+                                            System.out.println(
+                                                    "length: " + length 
+                                                    + "\ttaskId: " + taskId
+                                                    + "\treqType" + reqType);
 
                                             // 确保有足够的字节来读取数据
                                             if (in.readableBytes() < length) {
@@ -222,41 +249,19 @@ class UnixChannelHandle {
 
                                             // 读取数据
                                             ByteBuf frame = in.readBytes(length);
-                                            out.add(new RpcPack(taskId, frame));
+                                            out.add(new RpcPack(taskId, frame, reqType));
                                         }
                                     })
                                     .addLast(new SimpleChannelInboundHandler<RpcPack>() {
+                                        // 解码后读取数据内容，这里需要将数据返回给客户端
                                         @Override
                                         protected void channelRead0(ChannelHandlerContext ctx, RpcPack msg)
                                                 throws Exception {
                                             System.out.println(
                                                     "Received message from server: " + msg.packData.readableBytes());
-                                            // read four bytre for id
-                                            ByteBufInputStream stream = new ByteBufInputStream(msg.packData);
 
-                                            FuncCallReq funcCallReq = FuncCallReq
-                                                    .parseFrom(stream);
-
-                                            // Handle the deserialized message
-                                            String func = funcCallReq.getFunc();
-                                            String argStr = funcCallReq.getArgStr();
-
-                                            // 需要一个线程池来处理消息
-                                            try {
-                                                String resStr = rpcHandleOwner.rpcHandle.handleRpc(func, argStr);
-                                                FuncCallResp resp = FuncCallResp.newBuilder().setRetStr(resStr)
-                                                        .build();
-                                                
-                                                // byte[] data = resp.toByteArray();
-                                                // ByteBuf buffer = Unpooled.buffer(8 + data.length);
-                                                // buffer.writeInt(data.length);
-                                                // buffer.writeInt(msg.taskId);
-                                                // buffer.writeBytes(data);
-                                                ctx.writeAndFlush(new UdsPack(resp,msg.taskId).encode());
-                                                System.out.println("Response sent.");
-                                            } catch (Exception e) {
-                                                e.printStackTrace();
-                                            }
+                                            // TODO 根据上一步进行消息区分，不一定是 FuncCallReq，可能是我们新定义的 proto
+                                            handle_remote_callback(rpcHandleOwner, udsHandle, ctx, msg);
                                         }
 
                                         @Override
@@ -308,5 +313,52 @@ class UnixChannelHandle {
         } finally {
             epollEventLoopGroup.shutdownGracefully();
         }
+    }
+
+    public static void handle_remote_callback(RpcHandleOwner rpcHandleOwner, UdsBackend udsHandle, ChannelHandlerContext ctx, RpcPack msg) throws IOException{
+
+        ByteBufInputStream stream = new ByteBufInputStream(msg.packData);
+
+        System.out.println("emsg.reqType " + msg.reqType);
+
+        switch (msg.reqType) {
+            case UdsBackend.RequestTypes.JAVA_REQ_TYPE:{
+                KvResponses kvResponses = KvResponses
+                        .parseFrom(stream);
+                
+                System.out.println("Received KvResponses from server: " + kvResponses.toString());
+                // TODO 发送回 KvBatch
+                udsHandle.kvBatch.setResult(kvResponses);
+
+                break;
+            }
+            case UdsBackend.RequestTypes.OTHER_REQ_TYPE:
+            {
+                FuncCallReq funcCallReq = FuncCallReq
+                        .parseFrom(stream);
+
+                // Handle the deserialized message
+                String func = funcCallReq.getFunc();
+                String argStr = funcCallReq.getArgStr();
+
+                // 需要一个线程池来处理消息
+                try {
+                    String resStr = rpcHandleOwner.rpcHandle.handleRpc(func, argStr);
+
+                    FuncCallResp resp = FuncCallResp.newBuilder().setRetStr(resStr)
+                            .build();
+
+                    ctx.writeAndFlush(new UdsPack(resp,msg.taskId).encode());
+                    System.out.println("Response sent.");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.out.println("send OTHER_REQ_TYPE response failed" + e.getMessage());
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
     }
 }

@@ -5,6 +5,7 @@ pub enum App {
     WordCount,
     Parallel,
     Sequential,
+    JavaKvTest,
 }
 
 impl From<&Cli> for App {
@@ -30,6 +31,7 @@ impl ToString for App {
             App::WordCount => "word_count".to_owned(),
             App::Parallel => "parallel".to_owned(),
             App::Sequential => "sequential".to_owned(),
+            App::JavaKvTest => "java_kv_test".to_owned(),
         }
     }
 }

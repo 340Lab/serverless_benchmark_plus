@@ -11,6 +11,7 @@ import process_rpc_proto.ProcessRpcProto.AppStarted;
 import process_rpc_proto.ProcessRpcProto.FuncCallReq;
 import process_rpc_proto.ProcessRpcProto.UpdateCheckpoint;
 import process_rpc_proto.ProcessRpcProto.FuncCallResp;
+import process_rpc_proto.ProcessRpcProto.KvRequests;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -44,26 +45,45 @@ public class UdsPack{
     Object pack;
     public int id;
     public int taskId;
+    // TODO 需要新增一类 proto
     public UdsPack(Object inner,int taskId){
+
+        // TODO 加一个log
+
+
         pack=inner;
         this.taskId=taskId;
-
-        if(inner instanceof FuncCallResp){
+        if (inner instanceof AppStarted) {
+            id = 1;
+        }
+        else if (inner instanceof FuncCallReq) {
+            id = 2;
+        }
+        else if(inner instanceof FuncCallResp){
             id=3;
         }
         else if(inner instanceof UpdateCheckpoint){
             id=4; 
-        }else{
+        }else if (inner instanceof KvRequests) {
+            id = 5;
+        }
+        else{
             throw new IllegalArgumentException("Unknown pack type");
         }
     }
     
     byte[] staticEncode(){
         switch(id){
+            case 1:
+                return ((AppStarted)pack).toByteArray();
+            case 2:
+                return ((FuncCallReq)pack).toByteArray();
             case 3:
                 return ((FuncCallResp)pack).toByteArray();
             case 4:
                 return ((UpdateCheckpoint)pack).toByteArray();
+            case 5:
+                return ((KvRequests)pack).toByteArray();
             default:
                 throw new IllegalArgumentException("Unknown pack type");
         }

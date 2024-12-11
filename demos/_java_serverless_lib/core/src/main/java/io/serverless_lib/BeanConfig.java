@@ -24,4 +24,9 @@ public class BeanConfig {
     public CracManager cracManager() {
         return new CracManager();
     }
+
+    @Bean
+    public KvBatch kvBatch(){
+        return new KvBatch("javakv-test", "javakv-test-func", 9999);
+    }
 }

@@ -40,8 +40,9 @@ os_system_sure(f"ls {proto_src_dir}")
 print("\n\n")
 
 print("Proto target Dir:")
-os_system_sure("ls ../core/src/main/java/io/serverless_lib/")
+os_system_sure("ls ../core/src/main/java/")
+# os_system_sure("ls ../core/src/main/java/io/serverless_lib/")
 print("\n\n"  )
 
 os_system_sure(f"protoc --proto_path={proto_src_dir} \
---java_out=../core/src/main/java/io/serverless_lib {proto_src}")
+--java_out=../core/src/main/java {proto_src}")
