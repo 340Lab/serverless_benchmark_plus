@@ -55,7 +55,8 @@ os.chdir(f"../../demos")
 # pylib.os_system_sure(f"python3 scripts/1.gen_waverless_app.py {demo_app}")
 def upload_app(appname,rename):
     appdir=f"scripts/waverless/{appname}/pack"
-    
+    # 复制 JAR 文件到应用包
+    os.system(f"cp ../demos/{appname}/target/{appname}-1.0-SNAPSHOT-jar-with-dependencies.jar {appdir}/app.jar")
 
     os.chdir(appdir)
     
