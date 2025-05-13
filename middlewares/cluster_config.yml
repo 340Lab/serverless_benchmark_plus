@@ -1,11 +1,14 @@
-# lab1:
-#   ip: 192.168.31.162
-#   is_master:
-lab2: 
-  ip: 192.168.31.87
+# according to waverless/scripts/telego/dist/deployment.yml
+
+lab1:
+  ip: 192.168.31.162:2501
   is_master:
+lab2: 
+  ip: 192.168.31.87:2501
+  
 lab3: 
-  ip: 192.168.31.96
+  ip: 192.168.31.96:2501
+  # is_master:
 
 # lab7:
 #   ip: 192.168.31.89
@@ -20,3 +23,8 @@ lab3:
 #   ip: 192.168.31.138
 # lab12:
 #   ip: 192.168.31.171
+# master:
+#   ip: 127.0.0.1
+#   is_master:
+# worker:
+#   ip: 127.0.0.1

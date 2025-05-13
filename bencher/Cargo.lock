@@ -189,6 +189,7 @@ dependencies = [
  "base64 0.13.1",
  "clap",
  "enum_dispatch",
+ "futures",
  "goose",
  "image",
  "interprocess",

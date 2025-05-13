@@ -1,23 +1,28 @@
-mod demo_img_resize;
-mod demo_parallel;
-mod demo_sequential;
-mod demo_word_count;
+mod common_prepare;
+mod config;
 mod metric;
+mod minio;
+mod mode_bench;
+mod mode_call_once;
+mod mode_first_call;
+mod mode_prepare;
 mod parse;
-mod parse_app;
 mod parse_platform;
 mod parse_test_mode;
 mod platform_ow;
 mod platform_wl;
 mod prometheus;
+mod test_call_once;
+mod util;
+// mod reponse;
 
 use async_trait::async_trait;
 
 use clap::Parser;
+use config::Config;
 use enum_dispatch::enum_dispatch;
 use goose::prelude::*;
 use parse::Cli;
-use parse_app::App;
 use s3::creds::Credentials;
 use s3::Bucket;
 use s3::BucketConfiguration;
@@ -30,63 +35,10 @@ use std::sync::mpsc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
-
-lazy_static::lazy_static! {
-    pub static ref BUCKET:Bucket={
-        let(tx,rx)=mpsc::channel();
-        tokio::spawn(async move{
-            let bucket_name="serverless-bench";
-            let region=Region::Custom {
-                region: "eu-central-1".to_owned(),
-                endpoint: "http://192.168.31.96:9009".to_owned(),
-            };
-            let credentials= Credentials {
-                access_key: Some("minioadmin".to_owned()),
-                secret_key: Some("minioadmin123".to_owned()),
-                security_token: None,
-                session_token: None,
-                expiration: None,
-            };
-
-            let mut bucket=Bucket::new(bucket_name,region.clone(), credentials.clone()).unwrap().with_path_style();
-
-            let bucket_exist=match bucket.exists().await{
-                Err(e)=>{
-                    tracing::warn!("test s3 is not started, automatically start it");
-                    // docker-compose up -d at ../middlewares/minio/
-                    process::Command::new("docker-compose")
-                        .arg("up")
-                        .arg("-d")
-                        .current_dir(PathBuf::from("../middlewares/minio/"))
-                        .output()
-                        .expect("failed to start minio");
-                    tokio::time::sleep(Duration::from_secs(15)).await;
-                    bucket.exists().await.unwrap()
-                }
-                Ok(ok)=>ok
-            };
-
-            if bucket_exist {
-                for b in bucket.list("".to_owned(),None).await.unwrap(){
-                    bucket.delete_object(b.name).await.unwrap();
-                    // bucket.delete().await.unwrap();
-                }
-            }else{
-                bucket = Bucket::create_with_path_style(
-                    bucket_name,
-                    region,
-                    credentials,
-                    BucketConfiguration::default(),
-                )
-                .await.unwrap()
-                .bucket;
-            }
-
-            tx.send(bucket);
-        });
-        rx.recv().unwrap()
-    };
-}
+use tracing::Level;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Layer;
 
 fn is_bench_mode(cli: &Cli) -> bool {
     cli.bench_mode > 0
@@ -96,17 +48,20 @@ fn is_first_call_mode(cli: &Cli) -> bool {
     cli.first_call_mode > 0
 }
 
+fn is_prepare_mode(cli: &Cli) -> bool {
+    cli.prepare > 0
+}
+
 fn is_once_mode(cli: &Cli) -> bool {
     !is_bench_mode(cli) && !is_first_call_mode(cli)
 }
-
-#[enum_dispatch(SpecTarget)]
-enum SpecTargetBind {
-    ImgResize(demo_img_resize::ImgResize),
-    WordCount(demo_word_count::WordCount),
-    Parallel(demo_parallel::Parallel),
-    Sequential(demo_sequential::Sequential),
-}
+// #[enum_dispatch(SpecTarget)]
+// enum SpecTargetBind {
+//     ImgResize(demo_img_resize::ImgResize),
+//     WordCount(demo_word_count::WordCount),
+//     Parallel(demo_parallel::Parallel),
+//     Sequential(demo_sequential::Sequential),
+// }
 
 /// unit: ms
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -152,29 +107,29 @@ impl Metric {
     }
 }
 
-#[enum_dispatch]
-trait SpecTarget: Send + 'static {
-    fn app(&self) -> App;
-    fn set_platform(&mut self, platform: PlatformOpsBind);
-    fn get_platform(&mut self) -> &mut PlatformOpsBind;
+// #[enum_dispatch]
+// trait SpecTarget: Send + 'static {
+//     fn app(&self) -> App;
+//     fn set_platform(&mut self, platform: PlatformOpsBind);
+//     fn get_platform(&mut self) -> &mut PlatformOpsBind;
 
-    async fn prepare_once(&mut self, _seed: String, _cli: Cli) {
-        unimplemented!()
-    }
-    async fn call_once(&mut self, _cli: Cli) -> Metric {
-        unimplemented!()
-    }
-    async fn prepare_bench(&mut self, _seed: String, _cli: Cli) {}
-    async fn call_bench(&mut self, _cli: Cli) {
-        unimplemented!()
-    }
-    async fn prepare_first_call(&mut self, _seed: String, _cli: Cli) {
-        unimplemented!()
-    }
-    async fn call_first_call(&mut self, _cli: Cli) {
-        unimplemented!()
-    }
-}
+//     async fn prepare_once(&mut self, _seed: String, _cli: Cli) {
+//         unimplemented!()
+//     }
+//     async fn call_once(&mut self, _cli: Cli) -> Metric {
+//         unimplemented!()
+//     }
+//     async fn prepare_bench(&mut self, _seed: String, _cli: Cli) {}
+//     async fn call_bench(&mut self, _cli: Cli) {
+//         unimplemented!()
+//     }
+//     async fn prepare_first_call(&mut self, _seed: String, _cli: Cli) {
+//         unimplemented!()
+//     }
+//     async fn call_first_call(&mut self, _cli: Cli) {
+//         unimplemented!()
+//     }
+// }
 
 #[enum_dispatch(PlatformOps)]
 enum PlatformOpsBind {
@@ -184,69 +139,131 @@ enum PlatformOpsBind {
 
 #[enum_dispatch]
 pub trait PlatformOps: Send + 'static {
+    fn cli(&self) -> &Cli;
     async fn remove_all_fn(&self);
     async fn upload_fn(&mut self, demo: &str, rename_sub: &str);
     async fn call_fn(&self, app: &str, func: &str, arg_json_value: &serde_json::Value) -> String;
+    async fn prepare_apps_bin(&self, apps: Vec<String>, config: &Config);
 }
+
+// pub trait PlatformOpsExt: PlatformOps {
+//     fn config_path_string(&self) -> String {
+//         self.cli().config_path()
+//     }
+// }
 // pub struct CallRes {
 //     out: String,
 //     err: String,
 // }
+
+pub fn start_tracing() {
+    let my_filter = tracing_subscriber::filter::filter_fn(|v| {
+        // println!("{}", v.module_path().unwrap());
+        // println!("{}", v.name());
+        // if v.module_path().unwrap().contains("quinn_proto") {
+        //     return false;
+        // }
+
+        // if v.module_path().unwrap().contains("qp2p::wire_msg") {
+        //     return false;
+        // }
+
+        // println!("{}", v.target());
+        if let Some(mp) = v.module_path() {
+            if mp.contains("async_raft") {
+                return false;
+            }
+            if mp.contains("hyper") {
+                return false;
+            }
+        }
+
+        // if v.module_path().unwrap().contains("less::network::p2p") {
+        //     return false;
+        // }
+
+        // v.level() == &tracing::Level::ERROR
+        //     || v.level() == &tracing::Level::WARN
+        //     || v.level() == &tracing::Level::INFO
+        v.level() != &tracing::Level::TRACE
+        // v.level() == &tracing::Level::INFO
+        // true
+    });
+    let my_layer = tracing_subscriber::fmt::layer();
+    tracing_subscriber::registry()
+        .with(my_layer.with_filter(my_filter))
+        .init();
+}
 
 #[tokio::main]
 async fn main() -> Result<(), GooseError> {
     // don't go thouph proxy when performance
     std::env::remove_var("http_proxy");
     std::env::remove_var("https_proxy");
-    let subscriber = tracing_subscriber::FmtSubscriber::new();
-    tracing::subscriber::set_global_default(subscriber).unwrap();
+
+    start_tracing();
+
+    // tracing::debug!(
+    //     "bencher running at dir {}",
+    //     std::env::current_dir().unwrap()
+    // );
+    // debug abs running dir
+
+    tracing::debug!(
+        "bencher running at dir {}",
+        std::env::current_dir().unwrap().display()
+    );
 
     let cli = Cli::parse();
+    cli.check_app_fn().check_platform().check_mode();
+
+    let config = config::load_config();
+
+    minio::init_bucket(&config.minio).await;
+
     let seed = "helloworld";
-
-    assert!(
-        !(cli.with_ow > 0 && cli.with_wl > 0),
-        "Cannot run with both OpenWhisk and Waverless"
-    );
-
-    assert!(
-        cli.bench_mode + cli.first_call_mode <= 1,
-        "Cannot test multiple modes at one time {}",
-        cli.bench_mode + cli.first_call_mode
-    );
-
-    let mut target = if cli.img_resize > 0 {
-        SpecTargetBind::from(demo_img_resize::ImgResize::default())
-    } else if cli.word_count > 0 {
-        SpecTargetBind::from(demo_word_count::WordCount::default())
-    } else if cli.parallel > 0 {
-        SpecTargetBind::from(demo_parallel::Parallel::default())
-    } else if cli.sequential > 0 {
-        SpecTargetBind::from(demo_sequential::Sequential::default())
-    } else {
-        unreachable!()
-    };
-    target.set_platform(if cli.with_ow > 0 {
-        PlatformOpsBind::from(platform_ow::PlatfromOw::default())
+    tracing::debug!("Preparing paltform >>>");
+    let mut platform = if cli.with_ow > 0 {
+        PlatformOpsBind::from(platform_ow::PlatfromOw::new(&cli, &config))
     } else if cli.with_wl > 0 {
-        PlatformOpsBind::from(platform_wl::PlatfromWl::new())
+        PlatformOpsBind::from(platform_wl::PlatfromWl::new(&cli, config.clone()))
     } else {
-        panic!();
-    });
+        panic!("no platform specified, please specify by --with-ow or --with-wl");
+    };
+
+    tracing::debug!("dispatching mode >>>");
+    fn print_mode(mode: &str, preparing: bool) {
+        tracing::debug!("===========================");
+        tracing::debug!("Current mode is {mode}");
+        tracing::debug!("Preparing: {preparing}");
+        tracing::debug!("===========================");
+    }
+    if is_prepare_mode(&cli) {
+        common_prepare::prepare_data(cli.target_apps(), &config).await;
+        platform.prepare_apps_bin(cli.target_apps(), &config).await;
+    }
 
     if is_bench_mode(&cli) {
-        target.prepare_bench(seed.to_owned(), cli.clone()).await;
-        target.call_bench(cli).await;
+        print_mode("bench", is_bench_mode(&cli));
+        unimplemented!();
+        // target.prepare_bench(seed.to_owned(), cli.clone()).await;
+        // target.call_bench(cli).await;
     } else if is_first_call_mode(&cli) {
-        target
-            .prepare_first_call(seed.to_owned(), cli.clone())
-            .await;
-        target.call_first_call(cli).await;
+        print_mode("first_call", is_bench_mode(&cli));
+        if is_prepare_mode(&cli) {
+            mode_first_call::prepare(&mut platform, &config, cli.clone()).await;
+        } else {
+            mode_first_call::call(&mut platform, cli, &config).await;
+        }
     } else if is_once_mode(&cli) {
-        target.prepare_once(seed.to_owned(), cli.clone()).await;
-        // wait for the system to be stable
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        target.call_once(cli).await;
+        print_mode("first_call", is_bench_mode(&cli));
+        if is_prepare_mode(&cli) {
+            mode_call_once::prepare(&mut platform, seed.to_owned(), cli.clone()).await;
+        } else {
+            mode_call_once::call(&mut platform, cli, &config).await;
+        }
+    } else {
+        panic!("unreachable")
     }
 
     Ok(())

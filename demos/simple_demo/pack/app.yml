@@ -1,0 +1,7 @@
+name: simple_demo
+version: 1.0.0
+functions:
+  - name: simple
+    handler: test.functions.Simple
+    memory: 128
+    timeout: 30 

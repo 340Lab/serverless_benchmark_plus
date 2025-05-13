@@ -1,0 +1,134 @@
+minio:
+  endpoint: "http://192.168.31.54:9009"
+  access_key: "minioadmin"
+  secret_key: "minioadmin123"
+  compose_path: "../middlewares/minio/"
+
+models:
+  simple_demo:
+    # name: "Simple Demo"
+    # description: "A simple demo function"
+    # language: "java"
+    # runtime: "java11"
+    # handler: "test.functions.Simple"
+    # memory: 256
+    # timeout: 30
+    prepare_data: []
+    prepare_scripts: []
+    fns:
+      simple:
+        args: {}
+
+  img_resize:
+    fns:
+      resize:
+        args: 
+          use_minio: true
+          image_s3_path: "image_to_resize.png"
+          target_width: 50
+          target_height: 50
+    prepare_data: ["image_to_resize.png"]
+    prepare_scripts: 
+    - |
+      from PIL import Image, ImageDraw
+      import random
+
+      def generate_random_image(width, height, output_path):
+          # 创建一个空白图像
+          image = Image.new('RGB', (width, height), 'white')
+          draw = ImageDraw.Draw(image)
+
+          # 生成随机颜色的像素
+          for x in range(width):
+              for y in range(height):
+                  r = random.randint(0, 255)
+                  g = random.randint(0, 255)
+                  b = random.randint(0, 255)
+                  draw.point((x, y), fill=(r, g, b))
+
+          # 保存图像
+          image.save(output_path)
+          print(f"Image saved to {output_path}")
+
+      # 指定图片的宽度和高度
+      width = 800
+      height = 600
+      output_path = 'image_to_resize.png'
+
+      # 生成随机图片
+      generate_random_image(width, height, output_path)
+
+  word_count:
+    prepare_data: 
+    - large_text_file.txt
+    prepare_scripts: 
+    - |
+      import os
+
+      def generate_paragraph():
+          paragraph = """
+          In a far-off land, nestled among the mountains, lies a small village known for its unique culture and friendly inhabitants. Each spring, the villagers hold a grand festival to celebrate the arrival of the flowering season. Visitors from all corners gather to enjoy this beautiful moment. During the festival, people don traditional attire and dance joyfully, filling the village with laughter and cheer.
+          """
+          return paragraph
+
+      def generate_large_text_file(file_path, target_size_gb):
+          target_size_bytes = target_size_gb * 1024 * 1024 * 1024
+          paragraph = generate_paragraph()
+          paragraph_length = len(paragraph.encode('utf-8'))
+
+          with open(file_path, 'w') as file:
+              while os.path.getsize(file_path) < target_size_bytes:
+                  file.write(paragraph)
+
+          final_size = os.path.getsize(file_path) / (1024 * 1024 * 1024)
+          print(f"Generated file size: {final_size:.2f} GB")
+
+      # 生成一个 1 GB 大小的文件
+      file_path = 'large_text_file.txt'
+      target_size_gb = 1
+      generate_large_text_file(file_path, target_size_gb)
+    fns:
+      count:
+        args:
+          text_s3_path: "large_text_file.txt"
+
+# 函数配置项变体
+replicas: {}
+benchlist: {}
+#   img_resize2: # 函数 和 是否使用minio排列组合，每种两个
+#     source: img_resize
+
+#   img_resize3:
+#     source: img_resize
+#     args:
+#       use_minio: false
+#   img_resize4:
+#     source: img_resize
+#     args:
+#       use_minio: false
+
+  
+
+# benchlist:
+#   img_resize:
+#   img_resize2:
+#   img_resize3:
+#   img_resize4:
+  
+
+# parallel_composition:
+#   parallel:
+#     args:
+#       loopTime: 10000000
+#       parallelIndex: 100
+#   sequential:
+#     args:
+#       loopTime: 10000000
+
+
+    
+#   fns:
+#     split:
+#       args:
+#         text_s3_path: "random_words.txt"    
+#     count:
