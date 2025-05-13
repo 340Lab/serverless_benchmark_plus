@@ -17,10 +17,40 @@ import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
+import org.springframework.beans.factory.InitializingBean;
+
 /**
  * DataApi用于处理数据存储，支持内存模式和MinIO模式
  */
-public class DataApi {
+public class DataApi implements InitializingBean {
+    
+    // 静态实例，可以在任何地方访问
+    private static DataApi instance;
+    
+    /**
+     * 获取DataApi实例的静态方法
+     * @return DataApi实例
+     */
+    public static DataApi getInstance() {
+        if (instance == null) {
+            // 如果实例为null，创建一个新实例
+            synchronized (DataApi.class) {
+                if (instance == null) {
+                    instance = new DataApi();
+                }
+            }
+        }
+        return instance;
+    }
+    
+    /**
+     * Spring Bean初始化后执行的方法，设置静态实例
+     */
+    @Override
+    public void afterPropertiesSet() {
+        instance = this;
+        System.out.println("DataApi静态实例已设置");
+    }
     
     private volatile boolean initialized = false;
     private Map<String, byte[]> memoryStorage;
@@ -154,7 +184,7 @@ public class DataApi {
                 return baos.toByteArray();
                 
             } catch (MinioException | InvalidKeyException | NoSuchAlgorithmException e) {
-                throw new IOException("Failed to get object from MinIO: " + e.getMessage(), e);
+                throw new IOException("Failed to get object "+key+" from MinIO: " + e.getMessage(), e);
             }
         }
     }

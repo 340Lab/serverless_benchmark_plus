@@ -6,10 +6,12 @@ use std::{
 };
 use tokio::process::{self, Command};
 
-use crate::{config::Config, parse::Cli, PlatformOps};
+use crate::{config::Config, parse::Cli, platform::PlatformOps};
 
 pub struct PlatfromOw {
     pub gen_demos: HashSet<String>,
+    cli: Cli,
+    config: Config,
     cli: Cli,
     config: Config,
 }
@@ -17,12 +19,25 @@ pub struct PlatfromOw {
 impl PlatfromOw {
     pub fn new(cli: &Cli, config: &Config) -> Self {
         Self {
+impl PlatfromOw {
+    pub fn new(cli: &Cli, config: &Config) -> Self {
+        Self {
             gen_demos: HashSet::new(),
+            cli: cli.clone(),
+            config: config.clone(),
             cli: cli.clone(),
             config: config.clone(),
         }
     }
 }
+
+// impl Default for PlatfromOw {
+//     fn default() -> Self {
+//         PlatfromOw {
+//             gen_demos: HashSet::new(),
+//         }
+//     }
+// }
 
 // impl Default for PlatfromOw {
 //     fn default() -> Self {
@@ -39,7 +54,7 @@ impl PlatformOps for PlatfromOw {
             .status()
             .await
             .expect("Failed to clean openwhisk fns");
-   
+
         for app in apps {
             let mut cmd2 = process::Command::new("python3");
             cmd2.args(&["../middlewares/openwhisk/8.add_func.py", &app, &app]);
@@ -81,7 +96,14 @@ impl PlatformOps for PlatfromOw {
             .expect(&format!("Failed to add func {} as {}", demo, rename_sub));
         assert!(res.success());
     }
-    async fn call_fn(&self, app: &str, func: &str, arg_json_value: &serde_json::Value) -> String {
+    async fn call_fn(
+        &self,
+        app: &str,
+        func: &str,
+        arg_json_value: &serde_json::Value,
+        // big_data: &Option<Vec<String>>,
+        // fn_details: &FnDetails,
+    ) -> String {
         let mut p = Command::new("wsk");
         let appfunc = format!("{}_{}", app, func);
         let args = vec!["action", "invoke", "--result", &appfunc];
@@ -108,5 +130,8 @@ impl PlatformOps for PlatfromOw {
         } else {
             from_utf8(&res.stderr).unwrap().to_owned()
         }
+    }
+    async fn write_data(&self, key: &str, data: &[u8]) {
+        panic!("openwhisk doesn't support write data");
     }
 }

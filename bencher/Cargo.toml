@@ -8,19 +8,22 @@ edition = "2021"
 [dependencies]
 goose = "^0.16.4"
 tokio = { version = "1.1", features = ["process"] }
+tokio = { version = "1.1", features = ["process"] }
 clap = { version = "4.5.7", features = ["derive"] }
 image = "0.24.1"
 rand = "0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+serde_yaml = "0.9"
 base64 = "0.13"
 rust-s3 = "0.34.0"
 lazy_static = "1.4.0"
-reqwest = { version = "0.12.5", features = ["json"] }
+reqwest = { version = "^0.11", features = ["json", "multipart"] }
 async-trait = "0.1.74"
 enum_dispatch = "0.3.13"
 interprocess = "2.2.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3"
 futures = "0.3.30"
+dashmap = "5.4.0"

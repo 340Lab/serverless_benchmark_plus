@@ -1,5 +1,7 @@
 mod common_prepare;
 mod config;
+mod data_api;
+mod fs;
 mod metric;
 mod minio;
 mod mode_bench;
@@ -9,6 +11,7 @@ mod mode_prepare;
 mod parse;
 mod parse_platform;
 mod parse_test_mode;
+mod platform;
 mod platform_ow;
 mod platform_wl;
 mod prometheus;
@@ -20,15 +23,19 @@ use async_trait::async_trait;
 
 use clap::Parser;
 use config::Config;
+use config::FnDetails;
 use enum_dispatch::enum_dispatch;
 use goose::prelude::*;
 use parse::Cli;
+use platform::PlatformOps;
+use platform::PlatformOpsBind;
 use s3::creds::Credentials;
 use s3::Bucket;
 use s3::BucketConfiguration;
 use s3::Region;
 use serde::Deserialize;
 use serde::Serialize;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::sync::mpsc;
@@ -130,21 +137,6 @@ impl Metric {
 //         unimplemented!()
 //     }
 // }
-
-#[enum_dispatch(PlatformOps)]
-enum PlatformOpsBind {
-    PlatfromOw(platform_ow::PlatfromOw),
-    PlatfromWl(platform_wl::PlatfromWl),
-}
-
-#[enum_dispatch]
-pub trait PlatformOps: Send + 'static {
-    fn cli(&self) -> &Cli;
-    async fn remove_all_fn(&self);
-    async fn upload_fn(&mut self, demo: &str, rename_sub: &str);
-    async fn call_fn(&self, app: &str, func: &str, arg_json_value: &serde_json::Value) -> String;
-    async fn prepare_apps_bin(&self, apps: Vec<String>, config: &Config);
-}
 
 // pub trait PlatformOpsExt: PlatformOps {
 //     fn config_path_string(&self) -> String {

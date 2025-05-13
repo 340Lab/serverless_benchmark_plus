@@ -1,5 +1,5 @@
 minio:
-  endpoint: "http://192.168.31.54:9009"
+  endpoint: "http://192.168.31.54:9000"
   access_key: "minioadmin"
   secret_key: "minioadmin123"
   compose_path: "../middlewares/minio/"
@@ -22,6 +22,8 @@ models:
   img_resize:
     fns:
       resize:
+        big_data:
+        - image_to_resize.png:image_to_resize.png
         args: 
           use_minio: true
           image_s3_path: "image_to_resize.png"

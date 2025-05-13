@@ -16,9 +16,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import javax.imageio.ImageIO;
-import org.springframework.beans.factory.annotation.Autowired;
 import io.serverless_lib.DataApi;
-
 
 public class Resize {
     // Initialize Minio Client
@@ -27,8 +25,6 @@ public class Resize {
     //                 .endpoint("http://192.168.31.96:9009")
     //                 .credentials("minioadmin", "minioadmin123")
     //                 .build();
-    @Autowired
-    DataApi dataApi;
 
     // 辅助方法：将输入流读取到 ByteBuffer
     private static ByteBuffer readToByteBuffer(InputStream inputStream) throws IOException {
@@ -82,6 +78,7 @@ public class Resize {
         return newFilename;
     }
     public JsonObject call(JsonObject args) {
+        
         String imagepath = args.get("image_s3_path").getAsString();
         int targetWidth = args.get("target_width").getAsInt();
         int targetHeight = args.get("target_height").getAsInt();
@@ -94,6 +91,8 @@ public class Resize {
         System.out.println("useMinio: " + useMinio);
         System.out.println("--------------------------------");
 
+        // 使用静态方法获取DataApi实例
+        DataApi dataApi = DataApi.getInstance();
         dataApi.init(useMinio);
 
         JsonObject result = new JsonObject();
@@ -105,12 +104,29 @@ public class Resize {
             //             .build();
             byte[] imageData = dataApi.get(imagepath);
             // ByteBuffer bf=readToByteBuffer(downloadedStream);
+            // GetObjectArgs getObjectArgs = GetObjectArgs.builder()
+            //             .bucket("serverless-bench")
+            //             .object(imagepath)
+            //             .build();
+            byte[] imageData = dataApi.get(imagepath);
+            // ByteBuffer bf=readToByteBuffer(downloadedStream);
 
 
             byte[] resizedImage = resizeImage(imageData, targetWidth, targetHeight);
+            byte[] resizedImage = resizeImage(imageData, targetWidth, targetHeight);
             
             // ByteArrayInputStream inputStream = new ByteArrayInputStream(resizedImage);
+            // ByteArrayInputStream inputStream = new ByteArrayInputStream(resizedImage);
 
+            dataApi.put(renameFile(imagepath), resizedImage);
+            // minioClient.putObject(
+            //         PutObjectArgs.builder()
+            //                 .bucket("serverless-bench")
+            //                 .object(renameFile(imagepath))
+            //                 .stream(inputStream, resizedImage.length, -1)
+            //                 .contentType("image/jpeg")
+            //                 .build()
+            // );
             dataApi.put(renameFile(imagepath), resizedImage);
             // minioClient.putObject(
             //         PutObjectArgs.builder()

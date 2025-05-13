@@ -1,6 +1,6 @@
 use crate::{
     config::Config, metric::Recorder, mode_call_once, parse::Cli, parse_platform::Platform,
-    parse_test_mode::TestMode, PlatformOps, PlatformOpsBind,
+    parse_test_mode::TestMode, platform::PlatformOps, PlatformOpsBind,
 };
 
 pub async fn prepare(platform: &mut PlatformOpsBind, config: &Config, cli: Cli) {

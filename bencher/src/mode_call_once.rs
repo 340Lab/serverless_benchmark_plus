@@ -7,7 +7,7 @@ use std::{
 use clap::Args;
 use serde_yaml::Value;
 
-use crate::{config::Config, parse::Cli, Metric, PlatformOps, PlatformOpsBind};
+use crate::{config::Config, new_map, parse::Cli, platform::PlatformOps, Metric, PlatformOpsBind};
 
 pub async fn prepare(platform: &mut PlatformOpsBind, seed: String, cli: Cli) {
     platform.remove_all_fn().await;
@@ -42,18 +42,41 @@ pub async fn call(platform: &mut PlatformOpsBind, cli: Cli, config: &Config) -> 
     // let output = platform
     //     .call_fn("img_resize", "resize", &serde_json::to_value(args).unwrap())
     //     .await;
-    let output = platform
-        .call_fn(
+
+    let need_call_fn = platform
+        .bf_call_fn(
             &cli.app().unwrap(),
             &cli.func().unwrap(),
-            &serde_json::to_value(fndetail.args).unwrap(),
+            &fndetail.big_data,
+            &fndetail,
         )
         .await;
-    // tracing::info!("debug output {}", output);
-    let res: serde_json::Value = serde_json::from_str(&output).unwrap_or_else(|e| {
-        tracing::error!("failed to parse json: {}", e);
-        panic!("output is not json: '{}'", output);
-    });
+
+    let res = if need_call_fn {
+        let output = platform
+            .call_fn(
+                &cli.app().unwrap(),
+                &cli.func().unwrap(),
+                &serde_json::to_value(fndetail.args).unwrap(),
+                // &fndetail.big_data,
+            )
+            .await;
+        // tracing::info!("debug output {}", output);
+        let res: serde_json::Value = serde_json::from_str(&output).unwrap_or_else(|e| {
+            tracing::error!("failed to parse json: {}", e);
+            panic!("output is not json: '{}'", output);
+        });
+        res
+    } else {
+        serde_json::to_value(new_map!(HashMap{
+            "req_arrive_time".to_string() => start_call_ms,
+            "bf_exec_time".to_string() => start_call_ms,
+            "recover_begin_time".to_string() => start_call_ms,
+            "fn_start_time".to_string() => start_call_ms,
+            "fn_end_time".to_string() => start_call_ms,
+        }))
+        .unwrap()
+    };
 
     let mut req_arrive_time = res
         .get("req_arrive_time")
