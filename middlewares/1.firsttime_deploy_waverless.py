@@ -3,7 +3,7 @@ CUR_FDIR = os.path.dirname(os.path.abspath(__file__)); cur_scan=CUR_FDIR; scan=[
 import pylib
 
 os.chdir(CUR_FDIR)
-pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless2/prepare")
+pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless/prepare")
 # pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless2/upload")
 
 pylib.os_system_sure(f"telego cmd --cmd deploy/dist_waverless/prepare")

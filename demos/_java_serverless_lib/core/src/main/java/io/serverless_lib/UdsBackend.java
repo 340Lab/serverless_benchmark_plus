@@ -212,6 +212,7 @@ class UnixChannelHandle {
                                             // 读取长度字段
                                             int length = in.readInt();
                                             int taskId = in.readInt();
+                                            System.out.println("Received message from server: " + length + " bytes, taskId: " + taskId);
 
                                             // 确保有足够的字节来读取数据
                                             if (in.readableBytes() < length) {

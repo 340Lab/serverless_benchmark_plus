@@ -97,10 +97,24 @@ impl SpecTarget for WordCount {
             receive_resp_time - start_call_ms
         );
 
+        // | cold start time
+        //   |
+        //     | fn_start_ms
+
         println!("- req trans time: {}", req_arrive_time - start_call_ms);
         println!("- app verify time: {}", bf_exec_time - req_arrive_time);
-        println!("- cold start time: {}", recover_begin_time - bf_exec_time);
-        println!("- cold start time2: {}", fn_start_ms - recover_begin_time);
+        println!(
+            "- cold start time: {}",
+            if bf_exec_time > recover_begin_time {
+                recover_begin_time - bf_exec_time
+            } else {
+                0
+            }
+        );
+        println!(
+            "- cold start time2: {}",
+            fn_start_ms - recover_begin_time.max(req_arrive_time)
+        );
         println!("- exec time:{}", fn_end_ms - fn_start_ms);
         if fn_end_ms > receive_resp_time {
             println!(

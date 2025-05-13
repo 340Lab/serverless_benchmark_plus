@@ -7,15 +7,24 @@ use std::{
 use clap::Args;
 use serde_yaml::Value;
 
-use crate::{parse::Cli, Metric, PlatformOps, PlatformOpsBind, BUCKET};
+use crate::{config::Config, parse::Cli, Metric, PlatformOps, PlatformOpsBind};
 
 pub async fn prepare(platform: &mut PlatformOpsBind, seed: String, cli: Cli) {
     platform.remove_all_fn().await;
-    platform.upload_fn("simple_demo", "/root/ygy/demos/simple_demo/pack").await;
+    platform
+        .upload_fn("simple_demo", "/root/ygy/demos/simple_demo/pack")
+        .await;
 }
 
-pub async fn call(platform: &mut PlatformOpsBind, cli: Cli) -> Metric {
-    let args = cli.func_details().args.unwrap_or_default();
+// call once mod only got one function
+pub async fn call(platform: &mut PlatformOpsBind, cli: Cli, config: &Config) -> Metric {
+    let app = cli.app().unwrap();
+    let func = cli.func().unwrap();
+    let args = config
+        .get_fn_details(&app, &func)
+        .unwrap()
+        .args
+        .unwrap_or_default();
 
     let start_call_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -23,7 +32,7 @@ pub async fn call(platform: &mut PlatformOpsBind, cli: Cli) -> Metric {
         .as_millis() as u64;
 
     let output = platform
-        .call_fn("simple_demo", "simple", &serde_json::to_value(args).unwrap())
+        .call_fn(&app, &func, &serde_json::to_value(args).unwrap())
         .await;
 
     let res: serde_json::Value = serde_json::from_str(&output).unwrap_or_else(|e| {
