@@ -24,4 +24,9 @@ public class BeanConfig {
     public CracManager cracManager() {
         return new CracManager();
     }
+
+    @Bean
+    public DataApi dataApi() {
+        return new DataApi();
+    }
 }

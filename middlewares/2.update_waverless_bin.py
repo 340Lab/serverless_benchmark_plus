@@ -6,7 +6,7 @@ os.chdir(CUR_FDIR)
 
 pylib.os_system(f"rm -rf waverless/bin_waverless2/prepare_cache/waverless_amd64")
 pylib.os_system(f"rm -rf waverless/bin_waverless2/prepare_cache/waverless_entry_amd64")
-pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless2/prepare")
-pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless2/upload")
+pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless/prepare")
+pylib.os_system_sure(f"telego cmd --cmd deploy/bin_waverless/upload")
 
 

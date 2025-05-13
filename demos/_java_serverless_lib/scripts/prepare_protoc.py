@@ -31,7 +31,7 @@ def run_cmd_return(cmd):
 with open("config.yaml") as f:
     conf=yaml.safe_load(f)
 waverless_rel_path=conf["waverless_rel_path"]
-proto_src_dir=os.path.join(waverless_rel_path,"src/worker/func/shared/")
+proto_src_dir=os.path.join(waverless_rel_path,"src/main/src/general/app/app_shared/")
 proto_src=os.path.join(proto_src_dir,'process_rpc_proto.proto')
 
 

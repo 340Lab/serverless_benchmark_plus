@@ -1,4 +1,7 @@
+mod common_prepare;
+mod config;
 mod metric;
+mod minio;
 mod mode_bench;
 mod mode_call_once;
 mod mode_first_call;
@@ -10,11 +13,13 @@ mod platform_ow;
 mod platform_wl;
 mod prometheus;
 mod test_call_once;
+mod util;
 // mod reponse;
 
 use async_trait::async_trait;
 
 use clap::Parser;
+use config::Config;
 use enum_dispatch::enum_dispatch;
 use goose::prelude::*;
 use parse::Cli;
@@ -34,68 +39,6 @@ use tracing::Level;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Layer;
-
-fn new_bucket() -> Bucket {
-    let (tx, rx) = mpsc::channel();
-    tokio::spawn(async move {
-        let bucket_name = "serverless-bench";
-        let region = Region::Custom {
-            region: "eu-central-1".to_owned(),
-            endpoint: "http://192.168.31.96:9009".to_owned(),
-        };
-        let credentials = Credentials {
-            access_key: Some("minioadmin".to_owned()),
-            secret_key: Some("minioadmin123".to_owned()),
-            security_token: None,
-            session_token: None,
-            expiration: None,
-        };
-
-        let mut bucket = Bucket::new(bucket_name, region.clone(), credentials.clone())
-            .unwrap()
-            .with_path_style();
-
-        let bucket_exist = match bucket.exists().await {
-            Err(e) => {
-                tracing::warn!("test s3 is not started, automatically start it");
-                // docker-compose up -d at ../middlewares/minio/
-                process::Command::new("docker-compose")
-                    .arg("up")
-                    .arg("-d")
-                    .current_dir(PathBuf::from("../middlewares/minio/"))
-                    .output()
-                    .expect("failed to start minio");
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                bucket.exists().await.unwrap()
-            }
-            Ok(ok) => ok,
-        };
-
-        if bucket_exist {
-            for b in bucket.list("".to_owned(), None).await.unwrap() {
-                bucket.delete_object(b.name).await.unwrap();
-                // bucket.delete().await.unwrap();
-            }
-        } else {
-            bucket = Bucket::create_with_path_style(
-                bucket_name,
-                region,
-                credentials,
-                BucketConfiguration::default(),
-            )
-            .await
-            .unwrap()
-            .bucket;
-        }
-
-        tx.send(bucket);
-    });
-    rx.recv().unwrap()
-}
-
-lazy_static::lazy_static! {
-    pub static ref BUCKET:Bucket=new_bucket();
-}
 
 fn is_bench_mode(cli: &Cli) -> bool {
     cli.bench_mode > 0
@@ -196,10 +139,18 @@ enum PlatformOpsBind {
 
 #[enum_dispatch]
 pub trait PlatformOps: Send + 'static {
+    fn cli(&self) -> &Cli;
     async fn remove_all_fn(&self);
     async fn upload_fn(&mut self, demo: &str, rename_sub: &str);
     async fn call_fn(&self, app: &str, func: &str, arg_json_value: &serde_json::Value) -> String;
+    async fn prepare_apps_bin(&self, apps: Vec<String>, config: &Config);
 }
+
+// pub trait PlatformOpsExt: PlatformOps {
+//     fn config_path_string(&self) -> String {
+//         self.cli().config_path()
+//     }
+// }
 // pub struct CallRes {
 //     out: String,
 //     err: String,
@@ -252,15 +203,30 @@ async fn main() -> Result<(), GooseError> {
 
     start_tracing();
 
+    // tracing::debug!(
+    //     "bencher running at dir {}",
+    //     std::env::current_dir().unwrap()
+    // );
+    // debug abs running dir
+
+    tracing::debug!(
+        "bencher running at dir {}",
+        std::env::current_dir().unwrap().display()
+    );
+
     let cli = Cli::parse();
     cli.check_app_fn().check_platform().check_mode();
+
+    let config = config::load_config();
+
+    minio::init_bucket(&config.minio).await;
 
     let seed = "helloworld";
     tracing::debug!("Preparing paltform >>>");
     let mut platform = if cli.with_ow > 0 {
-        PlatformOpsBind::from(platform_ow::PlatfromOw::default())
+        PlatformOpsBind::from(platform_ow::PlatfromOw::new(&cli, &config))
     } else if cli.with_wl > 0 {
-        PlatformOpsBind::from(platform_wl::PlatfromWl::new())
+        PlatformOpsBind::from(platform_wl::PlatfromWl::new(&cli, config.clone()))
     } else {
         panic!("no platform specified, please specify by --with-ow or --with-wl");
     };
@@ -272,6 +238,11 @@ async fn main() -> Result<(), GooseError> {
         tracing::debug!("Preparing: {preparing}");
         tracing::debug!("===========================");
     }
+    if is_prepare_mode(&cli) {
+        common_prepare::prepare_data(cli.target_apps(), &config).await;
+        platform.prepare_apps_bin(cli.target_apps(), &config).await;
+    }
+
     if is_bench_mode(&cli) {
         print_mode("bench", is_bench_mode(&cli));
         unimplemented!();
@@ -280,16 +251,16 @@ async fn main() -> Result<(), GooseError> {
     } else if is_first_call_mode(&cli) {
         print_mode("first_call", is_bench_mode(&cli));
         if is_prepare_mode(&cli) {
-            mode_first_call::prepare(&mut platform, seed.to_owned(), cli.clone()).await;
+            mode_first_call::prepare(&mut platform, &config, cli.clone()).await;
         } else {
-            mode_first_call::call(&mut platform, cli).await;
+            mode_first_call::call(&mut platform, cli, &config).await;
         }
     } else if is_once_mode(&cli) {
         print_mode("first_call", is_bench_mode(&cli));
         if is_prepare_mode(&cli) {
             mode_call_once::prepare(&mut platform, seed.to_owned(), cli.clone()).await;
         } else {
-            mode_call_once::call(&mut platform, cli).await;
+            mode_call_once::call(&mut platform, cli, &config).await;
         }
     } else {
         panic!("unreachable")
