@@ -6,21 +6,55 @@ use std::{
 };
 use tokio::process::{self, Command};
 
-use crate::PlatformOps;
+use crate::{config::Config, parse::Cli, PlatformOps};
 
 pub struct PlatfromOw {
     pub gen_demos: HashSet<String>,
+    cli: Cli,
+    config: Config,
 }
 
-impl Default for PlatfromOw {
-    fn default() -> Self {
-        PlatfromOw {
+impl PlatfromOw {
+    pub fn new(cli: &Cli, config: &Config) -> Self {
+        Self {
             gen_demos: HashSet::new(),
+            cli: cli.clone(),
+            config: config.clone(),
         }
     }
 }
 
+// impl Default for PlatfromOw {
+//     fn default() -> Self {
+//         PlatfromOw {
+//             gen_demos: HashSet::new(),
+//         }
+//     }
+// }
+
 impl PlatformOps for PlatfromOw {
+    async fn prepare_apps_bin(&self, apps: Vec<String>, config: &Config) {
+        process::Command::new("python3")
+            .args(&["../middlewares/openwhisk/7.clean_all_fns.py"])
+            .status()
+            .await
+            .expect("Failed to clean openwhisk fns");
+   
+        for app in apps {
+            let mut cmd2 = process::Command::new("python3");
+            cmd2.args(&["../middlewares/openwhisk/8.add_func.py", &app, &app]);
+            tracing::info!("run cmd: {:?}", cmd2);
+            let res = cmd2
+                .status()
+                .await
+                .expect(&format!("Failed to add func {}", app));
+            assert!(res.success());
+        }
+    }
+
+    fn cli(&self) -> &Cli {
+        &self.cli
+    }
     async fn remove_all_fn(&self) {
         process::Command::new("python3")
             .args(&["../middlewares/openwhisk/7.clean_all_fns.py"])

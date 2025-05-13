@@ -1,14 +1,15 @@
 use crate::{
-    metric::Recorder, mode_call_once, parse::Cli, parse_platform::Platform,
+    config::Config, metric::Recorder, mode_call_once, parse::Cli, parse_platform::Platform,
     parse_test_mode::TestMode, PlatformOps, PlatformOpsBind,
 };
 
-pub async fn prepare(platform: &mut PlatformOpsBind, seed: String, cli: Cli) {
+pub async fn prepare(platform: &mut PlatformOpsBind, config: &Config, cli: Cli) {
     platform.remove_all_fn().await;
+    platform.prepare_apps_bin(cli.target_apps(), config).await;
     // cli.prepare_img(&seed);
 }
 
-pub async fn call(platform: &mut PlatformOpsBind, cli: Cli) {
+pub async fn call(platform: &mut PlatformOpsBind, cli: Cli, config: &Config) {
     let app = cli.app().expect("first call mode must have app name");
     let func = cli.func().expect("first call mode must have func name");
 
@@ -17,7 +18,7 @@ pub async fn call(platform: &mut PlatformOpsBind, cli: Cli) {
     let mut metrics = vec![];
     for _ in 0..20 {
         platform.upload_fn("simple_demo", "").await;
-        let m = mode_call_once::call(platform, cli.clone()).await; //self.call_once(cli.clone()).await;
+        let m = mode_call_once::call(platform, cli.clone(), config).await; //self.call_once(cli.clone()).await;
         recorder.record(m.clone());
         // prometheus::upload_fn_call_metric("simple_demo", &m).await;
         metrics.push(m);

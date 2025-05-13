@@ -44,6 +44,11 @@
             <groupId>org.crac</groupId>
             <artifactId>crac</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>8.5.2</version>
+        </dependency>
 	</dependencies>
 
 	<build>
